@@ -17,7 +17,7 @@ func init() {
 
 	apiKey, err := getAPISecret("secret-twitter-api-key")
 	if err != nil {
-		log.Fatalln("apiKey not found.")
+		log.Fatalf("apiKey not found. Error: %s", err.Error())
 	}
 
 	apiSecret, err := getAPISecret("secret-twitter-api-secret")
@@ -79,7 +79,7 @@ func Handle(w http.ResponseWriter, r *http.Request) {
 func getAPISecret(secretName string) (secretBytes []byte, err error) {
 
 	// read from the faasd-provider secrets folder
-	secretBytes, err = ioutil.ReadFile("/var/lib/faasd-provider/secrets/" + secretName)
+	secretBytes, err = ioutil.ReadFile("/var/openfaas/secrets/" + secretName)
 
 	if err != nil {
 		// read from the original location for backwards compatibility with openfaas <= 0.8.2
