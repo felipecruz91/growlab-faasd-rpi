@@ -1,0 +1,139 @@
+version: "3.7"
+services:
+  basic-auth-plugin:
+    image: ghcr.io/openfaas/basic-auth:0.20.5
+    environment:
+      - port=8080
+      - secret_mount_path=/run/secrets
+      - user_filename=basic-auth-user
+      - pass_filename=basic-auth-password
+    volumes:
+      # we assume cwd == /var/lib/faasd
+      - type: bind
+        source: ./secrets/basic-auth-password
+        target: /run/secrets/basic-auth-password
+      - type: bind
+        source: ./secrets/basic-auth-user
+        target: /run/secrets/basic-auth-user
+    cap_add:
+      - CAP_NET_RAW
+
+  nats:
+    image: docker.io/library/nats-streaming:0.11.2
+    command:
+      - "/nats-streaming-server"
+      - "-m"
+      - "8222"
+      - "--store=memory"
+      - "--cluster_id=faas-cluster"
+    # ports:
+    #    - "127.0.0.1:8222:8222"
+
+  prometheus:
+    image: docker.io/prom/prometheus:v2.14.0
+    volumes:
+      - type: bind
+        source: ./prometheus.yml
+        target: /etc/prometheus/prometheus.yml
+    cap_add:
+      - CAP_NET_RAW
+    ports:
+       - "127.0.0.1:9090:9090"
+
+  gateway:
+    image: ghcr.io/openfaas/gateway:0.20.11
+    environment:
+      - basic_auth=true
+      - functions_provider_url=http://faasd-provider:8081/
+      - direct_functions=false
+      - read_timeout=60s
+      - write_timeout=60s
+      - upstream_timeout=65s
+      - faas_nats_address=nats
+      - faas_nats_port=4222
+      - auth_proxy_url=http://basic-auth-plugin:8080/validate
+      - auth_proxy_pass_body=false
+      - secret_mount_path=/run/secrets
+      - scale_from_zero=true
+      - function_namespace=openfaas-fn
+    volumes:
+      # we assume cwd == /var/lib/faasd
+      - type: bind
+        source: ./secrets/basic-auth-password
+        target: /run/secrets/basic-auth-password
+      - type: bind
+        source: ./secrets/basic-auth-user
+        target: /run/secrets/basic-auth-user
+    cap_add:
+      - CAP_NET_RAW
+    depends_on:
+      - basic-auth-plugin
+      - nats
+      - prometheus
+    ports:
+       - "8080:8080"
+
+  queue-worker:
+    image: docker.io/openfaas/queue-worker:0.11.2
+    environment:
+      - faas_nats_address=nats
+      - faas_nats_port=4222
+      - gateway_invoke=true
+      - faas_gateway_address=gateway
+      - ack_wait=5m5s
+      - max_inflight=1
+      - write_debug=false
+      - basic_auth=true
+      - secret_mount_path=/run/secrets
+    volumes:
+      # we assume cwd == /var/lib/faasd
+      - type: bind
+        source: ./secrets/basic-auth-password
+        target: /run/secrets/basic-auth-password
+      - type: bind
+        source: ./secrets/basic-auth-user
+        target: /run/secrets/basic-auth-user
+    cap_add:
+      - CAP_NET_RAW
+    depends_on:
+      - nats
+
+  grafana:
+    image: docker.io/grafana/grafana:latest
+    environment:
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_BASIC_ENABLED=false
+    volumes:
+      # we assume cwd == /var/lib/faasd
+      - type: bind
+        source: ./grafana/
+        target: /etc/grafana/provisioning/
+    cap_add:
+      - CAP_NET_RAW
+    depends_on:
+      - prometheus
+    ports:
+      # - "127.0.0.1:3000:3000"
+      - "3000:3000"
+  influxdb:
+    image: docker.io/library/influxdb:1.8
+    environment:
+      - INFLUXDB_DB=defaultdb
+      - INFLUXDB_ADMIN_USER=admin
+      - "INFLUXDB_ADMIN_PASSWORD=PASSWORD"
+      - INFLUXDB_USER=user
+      - "INFLUXDB_USER_PASSWORD=PASSWORD"
+      - INFLUXDB_REPORTING_DISABLED=true
+      - INFLUXDB_HTTP_AUTH_ENABLED=true
+      - INFLUXDB_HTTP_BIND_ADDRESS=0.0.0.0:8086
+    volumes:
+      # we assume cwd == /var/lib/faasd
+      - type: bind
+        source: ./influxdb/
+        target: /var/lib/influxdb
+    user: "1000"
+    cap_add:
+      - CAP_NET_RAW
+    ports:
+      - "0.0.0.0:8086:8086"

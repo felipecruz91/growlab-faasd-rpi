@@ -1,0 +1,16 @@
+version: 1.0
+provider:
+  name: openfaas
+  gateway: http://192.168.1.42:8080
+functions:
+  send-tweet:
+    lang: golang-middleware
+    handler: ./send-tweet
+    image: felipecruz.azurecr.io/send-tweet:latest
+    build_args:
+      GO111MODULE: on
+    secrets:
+      - secret-twitter-api-key
+      - secret-twitter-api-secret
+      - secret-twitter-access-token
+      - secret-twitter-access-secret
